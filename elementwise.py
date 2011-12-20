@@ -47,12 +47,16 @@ class ElementwiseProxy(object):
     def iterable(self, iterable):
         self._iterable = iterable
 
+    # Go ahead and shadow apply in this name space, it's deprecated.
+    def apply(self, func, *args, **kwargs):
+        return ElementwiseProxy((func(e, *args, **kwargs) for e in object.__getattribute__(self, "iterable")), self)
+
     def __getattribute__(self, item):
-        try:
+        if item in {"apply"}:
+            return object.__getattribute__(self, item)
+        else:
             return ElementwiseProxy((
                 e.__getattribute__(item) for e in object.__getattribute__(self, "iterable")), self)
-        except AttributeError:
-            print "error"
 
     def __call__(self, *args, **kwargs):
         return ElementwiseProxy((e(*args, **kwargs) for e in object.__getattribute__(self,
@@ -62,8 +66,7 @@ class ElementwiseProxy(object):
         return iter(object.__getattribute__(self, "iterable"))
 
     def __nonzero__(self):
-        return ElementwiseProxy((
-            bool(e) for e in object.__getattribute__(self, "iterable")), self)
+        return bool(object.__getattribute__(self, "iterable"))
 
     def __str__(self):
         return ", ".join(e.__str__() for e in object.__getattribute__(self, "iterable"))
@@ -101,24 +104,6 @@ class ElementwiseProxy(object):
 
     def __invert__(self):
         return ElementwiseProxy((~e for e in object.__getattribute__(self, "iterable")), self)
-
-    def __complex__(self):
-        return ElementwiseProxy((complex(e) for e in object.__getattribute__(self, "iterable")), self)
-
-    def __int__(self):
-        return ElementwiseProxy((int(e) for e in object.__getattribute__(self, "iterable")), self)
-
-    def __long__(self):
-        return ElementwiseProxy((long(e) for e in object.__getattribute__(self, "iterable")), self)
-
-    def __float__(self):
-        return ElementwiseProxy((float(e) for e in object.__getattribute__(self, "iterable")), self)
-
-    def __oct__(self):
-        return ElementwiseProxy((oct(e) for e in object.__getattribute__(self, "iterable")), self)
-
-    def __hex__(self):
-        return ElementwiseProxy((hex(e) for e in object.__getattribute__(self, "iterable")), self)
 
     def __add__(self, other):
         return ElementwiseProxy((
@@ -216,9 +201,6 @@ class ElementwiseProxy(object):
     def __hash__(self):
         return ElementwiseProxy((hash(e) for e in object.__getattribute__(self, "iterable")), self)
 
-    def __len__(self):
-        return ElementwiseProxy((len(e) for e in object.__getattribute__(self, "iterable")), self)
-
     def __eq__(self, other):
         return ElementwiseProxy((e == other for e in object.__getattribute__(self, "iterable")), self)
 
@@ -306,4 +288,6 @@ if __name__ == "__main__":
     assert list(efoo == 2) == [False, True, False, False]
     print "testing equality: ", efoo == 2
     assert list((efoo + 1) * 2 + 3) == [7, 9, 11, 13]
-    print "chaining addition and multiplication: ", (efoo + 1) * 2 + 3
+    print "chaining addition and multiplication: ", ((efoo + 1) * 2 + 3).apply(float)
+    print "some function calls are supported, like abs() for instance: ", abs(efoo)
+    assert list((efoo.apply(float) + 0.0001).apply(round, 2)) == [1.0, 2.0, 3.0, 4.0]
