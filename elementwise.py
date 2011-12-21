@@ -27,12 +27,9 @@ class ElementwiseProxy(object):
     over a parent iterable.
     """
 
-    def __init__(self, iterable, ancestor=None):
+    def __init__(self, iterable, parent=None):
         self.iterable = iterable
-        if ancestor is not None:
-            self.ancestor = ancestor
-        else:
-            self.ancestor = self
+        self.parent = parent
 
     @property
     def iterable(self):
@@ -52,7 +49,7 @@ class ElementwiseProxy(object):
         return ElementwiseProxy((func(e, *args, **kwargs) for e in object.__getattribute__(self, "iterable")), self)
 
     def __getattribute__(self, item):
-        if item in {"apply"}:
+        if item in {"apply", "parent"}:
             return object.__getattribute__(self, item)
         else:
             return ElementwiseProxy((
@@ -291,3 +288,5 @@ if __name__ == "__main__":
     print "chaining addition and multiplication: ", ((efoo + 1) * 2 + 3).apply(float)
     print "some function calls are supported, like abs() for instance: ", abs(efoo)
     assert list((efoo.apply(float) + 0.0001).apply(round, 2)) == [1.0, 2.0, 3.0, 4.0]
+    print list(efoo.apply(float))
+    print list((efoo.apply(float).apply(round, 2) + 1).parent.parent.parent)

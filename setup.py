@@ -11,7 +11,7 @@ setup(
     py_modules=["elementwise"],
     author="Nathan Rice",
     author_email="nathan.alexander.rice@gmail.com",
-    version="0.111220",
+    version="0.111220c",
     license="BSD 2 clause",
     classifiers=[
         "Development Status :: 3 - Alpha",
