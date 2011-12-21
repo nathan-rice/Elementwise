@@ -49,7 +49,7 @@ class ElementwiseProxy(object):
         return ElementwiseProxy((func(e, *args, **kwargs) for e in object.__getattribute__(self, "iterable")), self)
 
     def __getattribute__(self, item):
-        if item in {"apply", "parent"}:
+        if item in {"apply", "parent", "__class__"}:
             return object.__getattribute__(self, item)
         else:
             return ElementwiseProxy((
@@ -290,3 +290,6 @@ if __name__ == "__main__":
     assert list((efoo.apply(float) + 0.0001).apply(round, 2)) == [1.0, 2.0, 3.0, 4.0]
     print list(efoo.apply(float))
     print list((efoo.apply(float).apply(round, 2) + 1).parent.parent.parent)
+    efoo2 = ElementwiseProxy(["one", "two", "three", "four"])
+    temp = ((efoo2.capitalize() + " little indian").split(" ").apply(reversed).apply("_".join) * 2)
+    print type(temp)
