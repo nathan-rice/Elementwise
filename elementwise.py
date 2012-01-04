@@ -5,10 +5,10 @@ on all members of the iterable.
 """
 from decorator import decorator
 import collections
-import inspect
 import itertools
 import operator
 import types
+import sphinx.ext.autodoc
 
 __author__ = 'Nathan Rice <nathan.alexander.rice@gmail.com>'
 
@@ -43,7 +43,7 @@ def graphmap(f, graph):
             for node in branch:
                 if id(node) in visited:
                     continue
-                if isinstance(node, (collections.Sequence, collections.Set)) and \
+                if isinstance(node, (collections.Iterable)) and \
                    not isinstance(node, basestring):
                     # We are at a branch
                     visited.add(id(node))
@@ -303,7 +303,7 @@ class ElementwiseProxy(OperationProxy):
     
         nums = ElementwiseProxy([1, 2, 3, 4])
         
-    Now you can perform a large vareity of operations on the proxy, and it will
+    You can perform a large vareity of operations on the proxy, and it will
     create a chain of operations to be applied to the contents of the iterable
     being proxied.  The proxy is fully lazy, so none of the operations will be
     applied until you begin to request values from the proxy by iterating over
@@ -1053,10 +1053,54 @@ class ElementwiseProxy(OperationProxy):
 
 class RecursiveElementwiseProxy(ElementwiseProxy):
     """
+    Provides recursive elementwise operator behavior, attribute access and
+    method calls over a parent iterable.
+    
+    .. testsetup::
+    
+        treenums = RecursiveElementwiseProxy([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+       
+    First, create an ElementwiseProxy from any iterable, like so::
+    
+        treenums = RecursiveElementwiseProxy([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+        
+    Yyou can perform a large vareity of operations on the proxy, and it will
+    create a chain of operations to be applied to the contents of the iterable
+    being proxied.  The proxy is fully lazy, so none of the operations will be
+    applied until you begin to request values from the proxy by iterating over
+    it.
+    
+    For example:
+        
+    >>> treenums + 1
+    ((2, 3, 4), (5, 6, 7), (8, 9, 10))
+    
+    >>> treenums * 2
+    ((2, 4, 6), (8, 10, 12), (14, 16, 18))
+    
+    >>> (treenums * 2 + 1).apply(float)
+    ((3.0, 5.0, 7.0), (9.0, 11.0, 13.0), (15.0, 17.0, 19.0))
+    
     """
 
     def __str__(self):
-        return ", ".join(str(e) for e in _iterable(self))
+        visited = set()
+        def stringify_iterable(iterable):
+            if not isinstance(iterable, (collections.Iterable)) or \
+               isinstance(iterable, basestring):
+                yield str(iterable)
+            else:
+                yield "("
+                first = True
+                for i in iterable:
+                    if not first:
+                        yield ", "
+                    else:
+                        first = False
+                    for j in stringify_iterable(i):
+                        yield j
+                yield ")"
+        return "".join(stringify_iterable(self))
 
     def __repr__(self):
         return "%s(%s)" % (
@@ -1781,7 +1825,7 @@ class PairwiseProxy(OperationProxy):
     
         nums = PairProxy([1, 2, 3, 4])
         
-    Now you can perform a large vareity of operations on the proxy, and it will
+    You can perform a large vareity of operations on the proxy, and it will
     create a chain of operations to be applied to the contents of the iterable
     being proxied.  The proxy is completely lazy, so none of the operations will be
     applied until you begin to request values from the proxy by iterating over
@@ -1789,31 +1833,24 @@ class PairwiseProxy(OperationProxy):
     
     For example:
     
-    >>> print nums + [1, 2, 3, 4]
+    >>> nums + [1, 2, 3, 4]
     2, 4, 6, 8
     
-    >>> print print nums * [2, 2, 3, 3]
+    >>> nums * [2, 2, 3, 3]
     2, 4, 9, 12
     
-    >>> print nums == [2, 2, 3, 5]
+    >>> nums == [2, 2, 3, 5]
     False, True, True, False
     
-    >>> print ((nums + 1) * 2 + 3).apply(float)
-    7.0, 9.0, 11.0, 13.0
+    >>> (nums.apply(repeat(float)) + repeat(0.0001)).apply(repeat(round), repeat(2))
     
-    >>> print (nums.apply(float) + 0.0001).apply(round, 2)
-    1.0, 2.0, 3.0, 4.0
+    >>> abs(nums - [3, 2, 1, 1])
     
-    >>> print abs(nums - 3)
-    2, 1, 0, 1
+    >>> (nums * [2, 2, 1, 5] + [3, 5, 9, 0]) / [4, 1, 2, 3]
     
-    >>> print (nums * 2 + 3) / 4
-    >>> list(efoo2.undo(3))
-    1, 2, 3, 4
+    >>> ((nums * itertools.repeat(2) + itertools.repeat(3)) / itertools.repeat(4)).replicate([2, 2, 3, 3])
     
-    >>> print ((nums * 2 + 3) / 4).replicate([2, 2, 3, 3])
-    1, 1, 2, 2
-    
+    >>> ((nums * [2, 3, 4, 5]) > [5, 6, 7, 8]) != [True, True, False, True]
     """
 
     @chainable
@@ -2924,11 +2961,10 @@ class PairwiseProxy(OperationProxy):
 
 if __name__ == "__main__":
     nums = PairwiseProxy([1, 2, 3, 4])
-    print (nums.apply(itertools.repeat(float)) + itertools.repeat(0.0001)).apply(itertools.repeat(round), itertools.repeat(2))
+    print "first: ", nums.apply(itertools.repeat(float)) + itertools.repeat(0.0001)
     print abs(nums - [3, 2, 1, 1])
     print (nums * [2, 2, 1, 5] + [3, 5, 9, 0]) / [4, 1, 2, 3]
     print ((nums * itertools.repeat(2) + itertools.repeat(3)) / itertools.repeat(4)).replicate([2, 2, 3, 3])
     print ((nums * [2, 3, 4, 5]) > [5, 6, 7, 8]) != [True, True, False, True]
-    treenums = RecursiveElementwiseProxy([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-    print treenums * 2
+
 
