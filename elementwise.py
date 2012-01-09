@@ -8,7 +8,7 @@ import collections
 import itertools
 import operator
 import types
-import sphinx.ext.autodoc
+import sphinx.ext.autosummary.generate
 
 __author__ = 'Nathan Rice <nathan.alexander.rice@gmail.com>'
 
@@ -1060,7 +1060,7 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
     
         treenums = RecursiveElementwiseProxy([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
        
-    First, create an ElementwiseProxy from any iterable, like so::
+    First, create an RecursiveElementwiseProxy from any iterable, like so::
     
         treenums = RecursiveElementwiseProxy([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
         
@@ -1842,20 +1842,26 @@ class PairwiseProxy(OperationProxy):
     >>> nums == [2, 2, 3, 5]
     False, True, True, False
     
-    >>> (nums.apply(repeat(float)) + repeat(0.0001)).apply(repeat(round), repeat(2))
+    >>> (nums.apply(float) / itertools.count(2) + itertools.count(1)).apply(round, args=itertools.repeat([2]))
+    1.5, 2.67, 3.75, 4.8
     
     >>> abs(nums - [3, 2, 1, 1])
+    2, 0, 2, 3
     
     >>> (nums * [2, 2, 1, 5] + [3, 5, 9, 0]) / [4, 1, 2, 3]
+    1, 9, 6, 6
     
     >>> ((nums * itertools.repeat(2) + itertools.repeat(3)) / itertools.repeat(4)).replicate([2, 2, 3, 3])
+    1, 0, 0, 0
     
     >>> ((nums * [2, 3, 4, 5]) > [5, 6, 7, 8]) != [True, True, False, True]
+    True, True, True, False
+
     """
 
     @chainable
     @cacheable
-    def apply(self, func, *args, **kwargs):
+    def apply(self, func, args=None, kwargs=None):
         """
         :parameter func:
             The function to be applied.
@@ -1881,11 +1887,15 @@ class PairwiseProxy(OperationProxy):
             FunctionType -> GeneratorType
         """
         iterable = object.__getattribute__(self, "iterable")
+        if not args:
+            args = itertools.repeat(tuple())
+        if not kwargs:
+            kwargs = itertools.repeat({})
         return lambda: itertools.imap(lambda x, y, z: func(x, *y, **z), iterable, args, kwargs)
 
     @chainable
     @cacheable
-    def __call__(self, *args, **kwargs):
+    def __call__(self, args=None, kwargs=None):
         """
         :parameter args:
             The positional arguments for each element of the PairwiseProxy
@@ -1908,6 +1918,10 @@ class PairwiseProxy(OperationProxy):
             FunctionType -> GeneratorType
         """
         iterable = object.__getattribute__(self, "iterable")
+        if not args:
+            args = itertools.repeat(tuple())
+        if not kwargs:
+            kwargs = itertools.repeat({})
         return lambda: itertools.imap(lambda x, y, z: x(*y, **z), iterable, args, kwargs)
 
     @chainable
@@ -2961,10 +2975,15 @@ class PairwiseProxy(OperationProxy):
 
 if __name__ == "__main__":
     nums = PairwiseProxy([1, 2, 3, 4])
-    print "first: ", nums.apply(itertools.repeat(float)) + itertools.repeat(0.0001)
+    print "print (nums.apply(float) / itertools.count(2) + itertools.count(1)).apply(round, args=itertools.repeat([2]))"
+    print (nums.apply(float) / itertools.count(2) + itertools.count(1)).apply(round, args=itertools.repeat([2]))
+    print "print abs(nums - [3, 2, 1, 1])"
     print abs(nums - [3, 2, 1, 1])
+    print "print (nums * [2, 2, 1, 5] + [3, 5, 9, 0]) / [4, 1, 2, 3]"
     print (nums * [2, 2, 1, 5] + [3, 5, 9, 0]) / [4, 1, 2, 3]
+    print "print ((nums * itertools.repeat(2) + itertools.repeat(3)) / itertools.repeat(4)).replicate([2, 2, 3, 3])"
     print ((nums * itertools.repeat(2) + itertools.repeat(3)) / itertools.repeat(4)).replicate([2, 2, 3, 3])
+    print "print ((nums * [2, 3, 4, 5]) > [5, 6, 7, 8]) != [True, True, False, True]"
     print ((nums * [2, 3, 4, 5]) > [5, 6, 7, 8]) != [True, True, False, True]
 
 
