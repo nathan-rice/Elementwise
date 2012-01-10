@@ -8,7 +8,6 @@ import collections
 import itertools
 import operator
 import types
-import sphinx.ext.autosummary.generate
 
 __author__ = 'Nathan Rice <nathan.alexander.rice@gmail.com>'
 
@@ -23,9 +22,15 @@ def _cacheable(proxy):
         return False
 
 def create_cell(obj):
-        return (lambda: obj).func_closure[0]
+    """
+    Create a cell object which references `obj`.
+    """
+    return (lambda: obj).func_closure[0]
 
 def copy_func(f, code=None, globals_=None, name=None, argdefs=None, closure=None):
+    """
+    Create a copy of a function, replacing any portions specified.
+    """
     return types.FunctionType(
         code or f.func_code,
         globals_ or f.func_globals,
@@ -33,6 +38,28 @@ def copy_func(f, code=None, globals_=None, name=None, argdefs=None, closure=None
         argdefs or f.func_defaults,
         closure or f.func_closure
     )
+
+def as_strlike(interable, f=str):
+    if f == repr: # don't repr() strings...
+        f = lambda x: isinstance(x, basestring) and str(x) or repr(x)
+    visited = set()
+    def stringify_iterable(iterable):
+        if not isinstance(iterable, (collections.Iterable)) or \
+           isinstance(iterable, basestring):
+            yield f(iterable)
+        elif id(iterable) not in visited:
+            visited.add(id(iterable))
+            yield f("(")
+            first = True
+            for i in iterable:
+                if not first:
+                    yield f(", ")
+                else:
+                    first = False
+                for j in stringify_iterable(i):
+                    yield j
+            yield f(")")
+    return f("").join(stringify_iterable(self))
 
 def graphmap(f, graph):
         """
@@ -257,7 +284,12 @@ class OperationProxy(object):
 
     @chainable
     def __getitem__(self, item):
-        return lambda: _iterable(self)[item]
+        # Get the original iterable.
+        current = self
+        while current.parent:
+            current = current.parent
+        # Now try to replicate this iterable with the parent
+        return self.replicate(current[item])
 
     @chainable
     @cacheable
@@ -1084,32 +1116,13 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
     """
 
     def __str__(self):
-        visited = set()
-        def stringify_iterable(iterable):
-            if not isinstance(iterable, (collections.Iterable)) or \
-               isinstance(iterable, basestring):
-                yield str(iterable)
-            else:
-                yield "("
-                first = True
-                for i in iterable:
-                    if not first:
-                        yield ", "
-                    else:
-                        first = False
-                    for j in stringify_iterable(i):
-                        yield j
-                yield ")"
-        return "".join(stringify_iterable(self))
+        return as_strlike(self)
 
     def __repr__(self):
-        return "%s(%s)" % (
-            type(self).__name__,
-            ", ".join(repr(e) for e in _iterable(self))
-        )
+        return as_strlike(self, repr)
 
     def __unicode__(self):
-        return u", ".join(unicode(e) for e in _iterable(self))
+        return as_strlike(self, unicode)
 
 
     @chainable
@@ -2974,6 +2987,8 @@ class PairwiseProxy(OperationProxy):
 
 
 if __name__ == "__main__":
+    treenums = RecursiveElementwiseProxy([[1, 2, 3], [4, 5, 6], [7, 8, [10, 11, [12, 13, 14]]]])
+    print treenums * 5 + 100
     nums = PairwiseProxy([1, 2, 3, 4])
     print "print (nums.apply(float) / itertools.count(2) + itertools.count(1)).apply(round, args=itertools.repeat([2]))"
     print (nums.apply(float) / itertools.count(2) + itertools.count(1)).apply(round, args=itertools.repeat([2]))
