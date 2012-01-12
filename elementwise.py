@@ -39,7 +39,7 @@ def copy_func(f, code=None, globals_=None, name=None, argdefs=None, closure=None
         closure or f.func_closure
     )
 
-def as_strlike(interable, f=str):
+def as_strlike(iterable, f=str):
     if f == repr: # don't repr() strings...
         f = lambda x: isinstance(x, basestring) and str(x) or repr(x)
     visited = set()
@@ -59,7 +59,7 @@ def as_strlike(interable, f=str):
                 for j in stringify_iterable(i):
                     yield j
             yield f(")")
-    return f("").join(stringify_iterable(self))
+    return f("").join(stringify_iterable(iterable))
 
 def graphmap(f, graph):
         """
@@ -256,12 +256,9 @@ class OperationProxy(object):
                 break
         return current
 
-    def __getattribute__(self, item):
-        try:
-            return object.__getattribute__(self, item)
-        except AttributeError:
-            iterable = IteratorProxy(_iterable(self), _cacheable(self))
-            return type(self)((e.__getattribute__(item) for e in iterable), self)
+    def __getattr__(self, item):
+        iterable = IteratorProxy(_iterable(self), _cacheable(self))
+        return type(self)((e.__getattribute__(item) for e in iterable), self)
 
     def __iter__(self):
         return iter(_iterable(self))
@@ -2989,6 +2986,7 @@ class PairwiseProxy(OperationProxy):
 if __name__ == "__main__":
     treenums = RecursiveElementwiseProxy([[1, 2, 3], [4, 5, 6], [7, 8, [10, 11, [12, 13, 14]]]])
     print treenums * 5 + 100
+    print isinstance(treenums, int)
     nums = PairwiseProxy([1, 2, 3, 4])
     print "print (nums.apply(float) / itertools.count(2) + itertools.count(1)).apply(round, args=itertools.repeat([2]))"
     print (nums.apply(float) / itertools.count(2) + itertools.count(1)).apply(round, args=itertools.repeat([2]))
