@@ -1,8 +1,76 @@
 """
-Elementwise provides a conveniece proxy object on an iterable which transforms
-operator behavior, function and methods into vectorized versions which operate
-on all members of the iterable.
+Elementwise - Lazy operation proxies for iterables
+==================================================
+
+.. module:: parrot
+   :platform: Unix, Windows
+   :synopsis: Analyze and reanimate dead parrots.
+.. moduleauthor:: Eric Cleese <eric@python.invalid>
+.. moduleauthor:: John Idle <john@python.invalid>
+
+Elementwise provides convenient, fully lazy, abstract programming behavior for
+interacting with iterable objects.  All attempts at attribute access on
+OperationProxy objects return generator factories wrapped in OperationProxy
+objects.  This means that you can generatively build up complex operation chains
+and apply these chains of operations repeatedly, to different source iterables.
+Additionally, each OperationProxy object has a reference to its parent
+OperationProxy, allowing you to traverse up the function tree, undoing
+operations or modying previous processes.
+
+Elementwise provides three proxy objects:
+
+1.) :class:`ElementwiseProxy`
+    This broadcasts all operations performed on the proxy to every member of the
+    proxied iterable.
+
+2.) :class:`PairwiseProxy`
+    This treats the arguments of all operations performed as iterables which
+    emit the correct argument value for the operation on the element from the
+    proxied iterable with the same index.  For example::
+        
+        >>> PairwiseProxy([1, 2, 3, 4]) + [1, 2, 3, 4]
+        PairwiseProxy([2, 4, 6, 8])
+
+3.) :class:`RecursiveElementwiseProxy`
+    This behaves like :class:`ElementwiseProxy`, with the notable exception that
+    when a member value is a non string iterable, it will recursively try to
+    apply the operation to child nodes.  This proxy is capable of arbitrary
+    graph traversal in a depth first fashion, and will not visit a node twice.
+
+Each of the proxy objects can mutate into any of the other types by calling a
+mutator method.
+
+* :meth:`ElementwiseProxyMixin.each`
+    mutates the current proxy into an :class:`ElementwiseProxy`.
+    
+* :meth:`PairwiseProxyMixin.each`
+    mutates the current proxy into a :class:`PairwiseProxy`.
+    
+* :meth:`RecursiveElementwiseProxyMixin.recurse`
+    mutates the current proxy into a :class:`RecursiveElementwiseProxy`.
+    
+When you would like to perform the operation chain represented by your proxy,
+simply iterate over it. The easiest way to do this is probably to call list with
+the proxy as the argument.
+
+If you would like to perform the same operation chain on another iterable,
+all :class:`OperationProxy` subclasses support :meth:`OperationProxy.replicate`
+which takes an iterable and generates a new chain, which is a duplicate of the
+current chain with that iterable as the base data source.
+
+If for some reason you would like to undo an operation, all :class:`OperationProxy`
+subclasses support :meth:`OperationProxy.undo`, which accepts an integer number
+of operations that should be undone (defaulting to 1) and returns a reference to
+the :class:`OperationProxy` representing that step in the chain.
+    
+.. note::
+    
+    There are some exceptions to the broadcasting behavior that can not be
+    circumvented.  This includes most methods uesd by builtin types that were
+    formerly functions, such as __str__ and __nonzero__. When you need to
+    broadcast these operations, use :meth:`ElementwiseProxy.apply`. 
 """
+
 from decorator import decorator
 import collections
 import itertools
@@ -12,7 +80,7 @@ import types
 __author__ = 'Nathan Rice <nathan.alexander.rice@gmail.com>'
 
 
-# Provides additional late binding support
+# We don't want to evaluate this until absolutely required.
 _iterable = lambda x: object.__getattribute__(x, "iterable")
 
 def _cacheable(proxy):
@@ -22,15 +90,11 @@ def _cacheable(proxy):
         return False
 
 def create_cell(obj):
-    """
-    Create a cell object which references `obj`.
-    """
+    """Create a cell object which references `obj`."""
     return (lambda: obj).func_closure[0]
 
 def copy_func(f, code=None, globals_=None, name=None, argdefs=None, closure=None):
-    """
-    Create a copy of a function, replacing any portions specified.
-    """
+    """Create a copy of a function, replacing any portions specified."""
     return types.FunctionType(
         code or f.func_code,
         globals_ or f.func_globals,
@@ -40,6 +104,11 @@ def copy_func(f, code=None, globals_=None, name=None, argdefs=None, closure=None
     )
 
 def as_strlike(iterable, f=str):
+    """
+    Generate a string-like representation of `iterable`, using `f`.  repr
+    requires special case behavior, since the repr() of a string is enclosed in
+    an additional set of quotes.
+    """
     if f == repr: # don't repr() strings...
         f = lambda x: isinstance(x, basestring) and str(x) or repr(x)
     visited = set()
@@ -62,27 +131,40 @@ def as_strlike(iterable, f=str):
     return f("").join(stringify_iterable(iterable))
 
 def graphmap(f, graph):
-        """
-        Depth first graph traversal and function application.
-        """
-        visited = set()
-        def traverse_branch(branch):
-            for node in branch:
-                if id(node) in visited:
-                    continue
-                if isinstance(node, (collections.Iterable)) and \
-                   not isinstance(node, basestring):
-                    # We are at a branch
-                    visited.add(id(node))
-                    yield traverse_branch(node)
-                else:
-                    # We are at a leaf
-                    yield f(node)
-        for n in traverse_branch(graph):
-            yield n
+    """
+    Depth first graph traversal and function application.  Cycles are
+    avoided by maintaining a set of observed object ids and testing for set
+    membership before edge traversal.
+    """
+    visited = set()
+    def traverse_branch(branch):
+        for node in branch:
+            if id(node) in visited:
+                continue
+            if isinstance(node, (collections.Iterable)) and \
+               not isinstance(node, basestring):
+                # We are at a branch
+                visited.add(id(node))
+                yield traverse_branch(node)
+            else:
+                # We are at a leaf
+                yield f(node)
+    for n in traverse_branch(graph):
+        yield n
 
 class IteratorProxy(object):
     """
+    This is a simple proxy object for iterators, which provides a few extra
+    features:
+    
+    * Supports value caching.
+    * Accepts callables that generates iterables.
+    * Supports slicing, and will try to behave intelligently about how it does
+    so depending on whether the source iterable is a sequence.
+    * Concatenates iterators using the + operator. 
+    * Generates a cartesian product of two iterators using the * operator.
+    * Generates a cartesian product of an iterable multiplied by itself N times
+    using the (* N) expression.
     """
 
     def __init__(self, iterable, cacheable=False):
@@ -91,6 +173,11 @@ class IteratorProxy(object):
         self.iterable = iterable
 
     def __iter__(self):
+        """
+        If the underlying iterable is cacheable and the cache has been built up,
+        the cache will be iterated over.  Otherwise the underlying iterable will
+        be iterated over.
+        """
         if not self.cache:
             if isinstance(self.iterable, types.FunctionType):
                 iterable = self.iterable()
@@ -109,6 +196,10 @@ class IteratorProxy(object):
 
     @property
     def cache(self):
+        """
+        The cache property returns cached values, or redirects to the iterable
+        property if the source iterable is not cacheable.
+        """
         if not self.cacheable:
             return self.iterable
         else:
@@ -116,7 +207,8 @@ class IteratorProxy(object):
 
     def __getitem__(self, key):
         """
-        Respect the getitem attribute on the parent if it exists
+        Respect the getitem attribute on the parent if it exists.  Otherwise,
+        try to use itertools.islice.
         """
         iterable_getitem = getattr(self.iterable, "__getitem__", None)
         if iterable_getitem:
@@ -127,9 +219,17 @@ class IteratorProxy(object):
             return itertools.islice(self, key, key + 1)
 
     def __add__(self, other):
+        """
+        Concatenates self and other.  Implemented using itertools.chain.
+        """
         return itertools.chain(self, other)
 
     def __mul__(self, other):
+        """
+        If other is an integer, return the cartesian product of self repeated
+        `other` times.  Otherwise, return the cartiasn product of `self` and
+        `other`
+        """
         if isinstance(other, int):
             return itertools.product(self, repeat=other)
         else:
@@ -138,7 +238,10 @@ class IteratorProxy(object):
 
 @decorator
 def chainable(f, self, *args, **kwargs):
-    """Chainable functions return OperationProxy objects."""
+    """
+    Chainable functions should return an instance of themselves, with a
+    reference to their parent function.
+    """
     return type(self)(f(self, *args, **kwargs), self)
 
 
@@ -154,13 +257,13 @@ def cacheable(f, self, *args, **kwargs):
 
 
 class ProxyMixin(object):
-    """Base class for Proxy Mixins"""
+    """Base class for Proxy Mixins."""
 
 
 class ElementwiseProxyMixin(ProxyMixin):
     """
-    Provides iterable objects with a proxy that broadcasts operations to
-    member elements.
+    Provides iterable objects with a proxy that broadcasts operations to member
+    elements.
     """
 
     @property
@@ -169,10 +272,10 @@ class ElementwiseProxyMixin(ProxyMixin):
         return ElementwiseProxy(self)
 
 
-class RecursiveProxyMixin(ProxyMixin):
+class RecursiveElementwiseProxyMixin(ProxyMixin):
     """
-    Provides iterable objects with a proxy that broadcasts operations recursively
-    to member elements.
+    Provides iterable objects with a proxy that broadcasts operations
+    recursively to member elements.
     """
 
     @property
@@ -204,7 +307,7 @@ class OperationProxy(object):
 
     def replicate(self, iterable):
         """
-        Creates a copy of this operation chain, applied to `iterable`.
+        Creates a copy of this operation chain, with `iterable` as the source.
         """
         def ancestors():
             current = self
@@ -270,7 +373,7 @@ class OperationProxy(object):
         return ", ".join(str(e) for e in _iterable(self))
 
     def __repr__(self):
-        return ", ".join(repr(e) for e in _iterable(self))
+        return "%s([%s])" % (type(self).__name__ , ", ".join(repr(e) for e in _iterable(self)))
 
     def __unicode__(self):
         return u", ".join(unicode(e) for e in _iterable(self))
@@ -319,7 +422,8 @@ class OperationProxy(object):
         return lambda: (e.__abs__() for e in _iterable(self))
 
 
-class ElementwiseProxy(OperationProxy):
+class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
+                       RecursiveElementwiseProxyMixin):
     """
     Provides elementwise operator behavior, attribute access and method calls
     over a parent iterable.
@@ -881,7 +985,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+        
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__iand__(other) for e in _iterable(self))
 
@@ -897,7 +1003,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__ixor__(other) for e in _iterable(self))
 
@@ -913,7 +1021,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__ior__(other) for e in _iterable(self))
 
@@ -929,7 +1039,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__iadd__(other) for e in _iterable(self))
 
@@ -945,7 +1057,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__isub__(other) for e in _iterable(self))
 
@@ -961,7 +1075,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__imul__(other) for e in _iterable(self))
 
@@ -977,7 +1093,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__idiv__(other) for e in _iterable(self))
 
@@ -995,7 +1113,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__itruediv__(other) for e in _iterable(self))
 
@@ -1011,7 +1131,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__ifloordiv__(other) for e in _iterable(self))
 
@@ -1027,7 +1149,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__imod__(other) for e in _iterable(self))
 
@@ -1043,7 +1167,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__ipow__(other, modulo) for e in _iterable(self))
 
@@ -1059,7 +1185,9 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__ilshift__(other) for e in _iterable(self))
 
@@ -1075,12 +1203,15 @@ class ElementwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: (e.__irshift__(other) for e in _iterable(self))
 
 
-class RecursiveElementwiseProxy(ElementwiseProxy):
+class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
+                                ElementwiseProxyMixin):
     """
     Provides recursive elementwise operator behavior, attribute access and
     method calls over a parent iterable.
@@ -1623,7 +1754,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__iand__(other), self.iterable)
 
@@ -1639,7 +1772,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__ixor__(other), self.iterable)
 
@@ -1655,7 +1790,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__ior__(other), self.iterable)
 
@@ -1671,7 +1808,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__iadd__(other), self.iterable)
 
@@ -1687,7 +1826,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__isub__(other), self.iterable)
 
@@ -1703,7 +1844,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__imul__(other), self.iterable)
 
@@ -1719,7 +1862,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__idiv__(other), self.iterable)
 
@@ -1737,7 +1882,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__itruediv__(other), self.iterable)
 
@@ -1753,7 +1900,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__ifloordiv__(other), self.iterable)
 
@@ -1769,7 +1918,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__imod__(other), self.iterable)
 
@@ -1785,7 +1936,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__ipow__(other, modulo), self.iterable)
 
@@ -1801,7 +1954,9 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__ilshift__(other), self.iterable)
 
@@ -1817,12 +1972,15 @@ class RecursiveElementwiseProxy(ElementwiseProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         return lambda: graphmap(lambda e: e.__irshift__(other), self.iterable)
 
 
-class PairwiseProxy(OperationProxy):
+class PairwiseProxy(OperationProxy, ElementwiseProxyMixin,
+                    RecursiveElementwiseProxyMixin):
     """
     Provides pairwise operator behavior, attribute access and method calls
     over a parent iterable.
@@ -1866,7 +2024,6 @@ class PairwiseProxy(OperationProxy):
     
     >>> ((nums * [2, 3, 4, 5]) > [5, 6, 7, 8]) != [True, True, False, True]
     True, True, True, False
-
     """
 
     @chainable
@@ -2702,12 +2859,12 @@ class PairwiseProxy(OperationProxy):
             
                 imap(lambda x, y: x &= y, self, other)
                 
-        .. warning:: This operations can not be undone once finalized.
-        
         :rtype:
             FunctionType -> GeneratorType
         
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__iand__(y), iterable, other)
@@ -2724,7 +2881,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__ixor__(y), iterable, other)
@@ -2747,7 +2906,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__ior__(y), iterable, other)
@@ -2770,7 +2931,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__iadd__(y), iterable, other)
@@ -2793,7 +2956,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__isub__(y), iterable, other)
@@ -2816,7 +2981,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__imul__(y), iterable, other)
@@ -2839,7 +3006,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__idiv__(y), iterable, other)
@@ -2862,7 +3031,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__itrue__(y), iterable, other)
@@ -2885,7 +3056,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__ifloordiv__(y), iterable, other)
@@ -2908,7 +3081,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
         
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__imod__(y), iterable, other)
@@ -2931,7 +3106,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y, z: x.__ipow__(y, modulo), iterable, other)
@@ -2954,7 +3131,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__ilshift__(y), iterable, other)
@@ -2977,7 +3156,9 @@ class PairwiseProxy(OperationProxy):
         :rtype:
             FunctionType -> GeneratorType
             
-        .. warning:: This operations can not be undone once finalized.
+        .. warning::
+            
+            For mutable types, this operations can not be undone once finalized.
         """
         iterable = object.__getattribute__(self, "iterable")
         return lambda: itertools.imap(lambda x, y: x.__irshift__(y), iterable, other)

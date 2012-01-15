@@ -1,5 +1,6 @@
 """
-Elementwise provides a convenient proxy object on an iterable which transforms
+Elementwise provides convenient proxy objects which build operation chains 
+generatively. create chain on an iterable which transforms
 operator behavior, function and methods into vectorized versions which operate
 on all members of the iterable.
 """
@@ -11,10 +12,10 @@ setup(
     py_modules=["elementwise"],
     author="Nathan Rice",
     author_email="nathan.alexander.rice@gmail.com",
-    version="0.111220c",
+    version="0.120114",
     license="BSD 2 clause",
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "License :: OSI Approved :: BSD License",
         "Topic :: Software Development :: Libraries :: Python Modules"
     ],
