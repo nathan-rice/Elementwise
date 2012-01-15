@@ -2,12 +2,6 @@
 Elementwise - Lazy operation proxies for iterables
 ==================================================
 
-.. module:: parrot
-   :platform: Unix, Windows
-   :synopsis: Analyze and reanimate dead parrots.
-.. moduleauthor:: Eric Cleese <eric@python.invalid>
-.. moduleauthor:: John Idle <john@python.invalid>
-
 Elementwise provides convenient, fully lazy, abstract programming behavior for
 interacting with iterable objects.  All attempts at attribute access on
 OperationProxy objects return generator factories wrapped in OperationProxy
