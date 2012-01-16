@@ -1,0 +1,19 @@
+Welcome to Elementwise's documentation!
+=======================================
+
+Contents:
+
+.. toctree::
+   :maxdepth: 2
+
+.. automodule:: elementwise
+	:members:
+	:members-order: 'groupwise'
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
+
