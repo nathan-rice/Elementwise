@@ -1,14 +1,6 @@
-Welcome to Elementwise's documentation!
-=======================================
-
-Contents:
-
-.. toctree::
-   :maxdepth: 2
-
 .. automodule:: elementwise
 	:members:
-	:members-order: 'groupwise'
+	:special-members:
 
 Indices and tables
 ==================

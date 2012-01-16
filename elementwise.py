@@ -37,7 +37,7 @@ mutator method.
 * :meth:`ElementwiseProxyMixin.each`
     mutates the current proxy into an :class:`ElementwiseProxy`.
     
-* :meth:`PairwiseProxyMixin.each`
+* :meth:`PairwiseProxyMixin.pair`
     mutates the current proxy into a :class:`PairwiseProxy`.
     
 * :meth:`RecursiveElementwiseProxyMixin.recurse`
@@ -153,12 +153,10 @@ class IteratorProxy(object):
     
     * Supports value caching.
     * Accepts callables that generates iterables.
-    * Supports slicing, and will try to behave intelligently about how it does
-    so depending on whether the source iterable is a sequence.
+    * Supports slicing, and will try to behave intelligently about how it does so, depending on whether the source iterable is a sequence.
     * Concatenates iterators using the + operator. 
-    * Generates a cartesian product of two iterators using the * operator.
-    * Generates a cartesian product of an iterable multiplied by itself N times
-    using the (* N) expression.
+    * Generates a cartesian product of two iterators using the \* operator.
+    * Generates a cartesian product of an iterable multiplied by itself N times using the (\* N) expression.
     """
 
     def __init__(self, iterable, cacheable=False):
@@ -233,8 +231,21 @@ class IteratorProxy(object):
 @decorator
 def chainable(f, self, *args, **kwargs):
     """
-    Chainable functions should return an instance of themselves, with a
+    Chainable functions should return an instance of their class, with a
     reference to their parent function.
+    
+    :param f:
+        The function to be decorated.
+        
+    :type f:
+        FunctionType
+        
+    :param self:
+        The chainable instance.
+        
+    :type self:
+        :class:`OperationProxy` subclass
+        
     """
     return type(self)(f(self, *args, **kwargs), self)
 
@@ -242,6 +253,18 @@ def chainable(f, self, *args, **kwargs):
 @decorator
 def cacheable(f, self, *args, **kwargs):
     """
+    :param f:
+        The function to be decorated.
+    
+    :type f:
+        FunctionType
+    
+    :param self:
+        The cacheable instance.
+        
+    :type self:
+        :class:`OperationProxy` subclass
+    
     Cacheable functions have their return iterable wrapped in an
     IterableProxy.  If `self`.__cacheable__ evaluates to True, the
     IterableProxy will cache results as it is iterated over.
@@ -263,7 +286,8 @@ class ElementwiseProxyMixin(ProxyMixin):
     @property
     def each(self):
         """Syntactic sugar for ElementwiseProxy(self)"""
-        return ElementwiseProxy(self)
+        parent = isinstance(self, OperationProxy) and self or None
+        return ElementwiseProxy(self, parent)
 
 
 class RecursiveElementwiseProxyMixin(ProxyMixin):
@@ -275,7 +299,8 @@ class RecursiveElementwiseProxyMixin(ProxyMixin):
     @property
     def recurse(self):
         """Syntactic sugar for RecursiveElementwiseProxy(self)"""
-        return RecursiveElementwiseProxy(self)
+        parent = isinstance(self, OperationProxy) and self or None
+        return RecursiveElementwiseProxy(self, parent)
 
 
 class PairwiseProxyMixin(ProxyMixin):
@@ -287,7 +312,8 @@ class PairwiseProxyMixin(ProxyMixin):
     @property
     def pair(self):
         """Syntactic sugar for PairwiseProxy(self)"""
-        return RecursiveElementwiseProxy(self)
+        parent = isinstance(self, OperationProxy) and self or None
+        return RecursiveElementwiseProxy(self, parent)
 
 
 class OperationProxy(object):
@@ -440,32 +466,23 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     
     >>> print nums.bit_length()
     1, 2, 2, 3
-    
     >>> nums + 1
     2, 3, 4, 5
-    
     >>> print nums * 2
     2, 4, 6, 8
-    
     >>> print nums == 2
     False, True, False, False
-    
     >>> print ((nums + 1) * 2 + 3).apply(float)
     7.0, 9.0, 11.0, 13.0
-    
     >>> print (nums.apply(float) + 0.0001).apply(round, 2)
     1.0, 2.0, 3.0, 4.0
-    
     >>> print abs(nums - 3)
     2, 1, 0, 1
-    
     >>> print (nums * 2 + 3) / 4
     >>> list(efoo2.undo(3))
     1, 2, 3, 4
-    
     >>> print ((nums * 2 + 3) / 4).replicate([2, 2, 3, 3])
     1, 1, 2, 2
-   
     >>> words = ElementwiseProxy(["one", "two", "three", "four"])
     >>> print (words + " little indians").upper().split(" ").apply(reversed).apply("_".join) * 2
     'INDIANS_LITTLE_ONEINDIANS_LITTLE_ONE', 'INDIANS_LITTLE_TWOINDIANS_LITTLE_TWO', 'INDIANS_LITTLE_THREEINDIANS_LITTLE_THREE', 'INDIANS_LITTLE_FOURINDIANS_LITTLE_FOUR'
@@ -479,7 +496,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
             The function to be applied.
             
         :returns:
-            A function which returns (func(e, *args, **kwargs) for e in self).
+            A function which returns::
+            
+                (func(e, *args, **kwargs) for e in self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -491,7 +510,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __call__(self, *args, **kwargs):
         """            
         :returns:
-            A function which returns (e(*args, **kwargs) for e in self).
+            A function which returns::
+            
+                (e(*args, **kwargs) for e in self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -503,7 +524,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __add__(self, other):
         """            
         :returns:
-            A function which returns (e + other for e in self).
+            A function which returns::
+            
+                (e + other for e in self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -515,7 +538,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __sub__(self, other):
         """            
         :returns:
-            A function which returns (e - other for e in self).
+            A function which returns::
+            
+                (e - other for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -527,7 +552,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __mul__(self, other):
         """            
         :returns:
-            A function which returns (e * other for e in self).
+            A function which returns::
+                
+                (e * other for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -539,7 +566,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __floordiv__(self, other):
         """            
         :returns:
-            A function which returns (e // other for e in self).
+            A function which returns::
+            
+                (e // other for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -551,7 +580,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __mod__(self, other):
         """            
         :returns:
-            A function which returns (e % other for e in self).
+            A function which returns::
+                
+                (e % other for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -563,7 +594,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __divmod__(self, other):
         """            
         :returns:
-            A function which returns (divmod(e, other) for e in self).
+            A function which returns::
+            
+                (divmod(e, other) for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -575,7 +608,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __pow__(self, other, modulo=None):
         """            
         :returns:
-            A function which returns (pow(e, other, modulo) for e in self).
+            A function which returns::
+            
+                (pow(e, other, modulo) for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -587,7 +622,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __lshift__(self, other):
         """            
         :returns:
-            A function which returns (e << other for e in self).
+            A function which returns::
+            
+                (e << other for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -599,7 +636,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rshift__(self, other):
         """            
         :returns:
-            A function which returns (e >> other for e in self).
+            A function which returns::
+            
+                (e >> other for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -611,7 +650,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __div__(self, other):
         """            
         :returns:
-            A function which returns (e / other for e in self).
+            A function which returns::
+            
+                (e / other for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -623,7 +664,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __truediv__(self, other):
         """            
         :returns:
-            A function which returns (e / other for e in self), using truediv.
+            A function which returns::
+            
+                (e / other for e in self), using truediv.
         
         :rtype:
             FunctionType -> GeneratorType
@@ -635,7 +678,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __radd__(self, other):
         """            
         :returns:
-            A function which returns (other + e for e in self).
+            A function which returns::
+            
+                (other + e for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -647,7 +692,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rand__(self, other):
         """            
         :returns:
-            A function which returns (other & e for e in self).
+            A function which returns::
+            
+                (other & e for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -659,7 +706,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rdiv__(self, other):
         """            
         :returns:
-            A function which returns (other / e for e in self).
+            A function which returns::
+            
+                (other / e for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -671,7 +720,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rdivmod__(self, other):
         """            
         :returns:
-            A function which returns (divmod(other, e) for e in self).
+            A function which returns::
+            
+                (divmod(other, e) for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -683,7 +734,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rfloordiv__(self, other):
         """            
         :returns:
-            A function which returns (other // e for e in self).
+            A function which returns::
+            
+                (other // e for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -695,7 +748,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rlshift__(self, other):
         """            
         :returns:
-            A function which returns (other << e for e in self).
+            A function which returns::
+            
+                (other << e for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -721,7 +776,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rmul__(self, other):
         """            
         :returns:
-            A function which returns (other * e for e in self).
+            A function which returns::
+            
+                (other * e for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -733,7 +790,9 @@ class ElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __ror__(self, other):
         """            
         :returns:
-            A function which returns (other | e for e in self).
+            A function which returns::
+            
+                (other | e for e in self).
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1228,13 +1287,11 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         
     >>> treenums + 1
     ((2, 3, 4), (5, 6, 7), (8, 9, 10))
-    
     >>> treenums * 2
     ((2, 4, 6), (8, 10, 12), (14, 16, 18))
-    
     >>> (treenums * 2 + 1).apply(float)
     ((3.0, 5.0, 7.0), (9.0, 11.0, 13.0), (15.0, 17.0, 19.0))
-    
+
     """
 
     def __str__(self):
@@ -1260,7 +1317,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __call__(self, *args, **kwargs):
         """            
         :returns:
-            A function which returns (e(*args, **kwargs) for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: e(*args, **kwargs), self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1272,7 +1331,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __add__(self, other):
         """            
         :returns:
-            A function which returns (e + other for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: e + other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1284,7 +1345,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __sub__(self, other):
         """            
         :returns:
-            A function which returns (e - other for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: e - other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1296,7 +1359,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __mul__(self, other):
         """            
         :returns:
-            A function which returns (e * other for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: e * other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1308,7 +1373,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __floordiv__(self, other):
         """            
         :returns:
-            A function which returns (e // other for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: e // other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1320,7 +1387,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __mod__(self, other):
         """            
         :returns:
-            A function which returns (e % other for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: e % other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1332,7 +1401,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __divmod__(self, other):
         """            
         :returns:
-            A function which returns (divmod(e, other) for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: divmod(e, other), self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1344,7 +1415,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __pow__(self, other, modulo=None):
         """            
         :returns:
-            A function which returns (pow(e, other, modulo) for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: pow(e, other, modulo), self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1356,7 +1429,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __lshift__(self, other):
         """            
         :returns:
-            A function which returns (e << other for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: e << other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1368,7 +1443,11 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rshift__(self, other):
         """            
         :returns:
-            A function which returns (e >> other for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: e >> other, self)
+            
+            
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1380,7 +1459,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __div__(self, other):
         """            
         :returns:
-            A function which returns (e / other for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: e / other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1392,7 +1473,11 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __truediv__(self, other):
         """            
         :returns:
-            A function which returns (e / other for e in self), using truediv.
+            A function which returns::
+            
+                graphmap(lambda e: e / other, self)
+                
+            using truediv.
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1404,7 +1489,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __radd__(self, other):
         """            
         :returns:
-            A function which returns (other + e for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: other + e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1416,7 +1503,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rand__(self, other):
         """            
         :returns:
-            A function which returns (other & e for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: other & e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1428,7 +1517,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rdiv__(self, other):
         """            
         :returns:
-            A function which returns (other / e for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: other / e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1440,7 +1531,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rdivmod__(self, other):
         """            
         :returns:
-            A function which returns (divmod(other, e) for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: divmod(other, e), self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1452,7 +1545,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rfloordiv__(self, other):
         """            
         :returns:
-            A function which returns (other // e for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: other // e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1464,7 +1559,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rlshift__(self, other):
         """            
         :returns:
-            A function which returns (other << e for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: other << e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1478,7 +1575,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e % other for e in self)
+                graphmap(lambda e: e % other for e in self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1490,7 +1587,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __rmul__(self, other):
         """            
         :returns:
-            A function which returns (other * e for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: other * e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1502,7 +1601,9 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
     def __ror__(self, other):
         """            
         :returns:
-            A function which returns (other | e for e in self).
+            A function which returns::
+            
+                graphmap(lambda e: other | e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1516,7 +1617,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (pow(other, e) for e in self)
+                graphmap(lambda e: pow(other, e), self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1530,7 +1631,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (other >> e for e in self)
+                graphmap(lambda e: other >> e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1544,7 +1645,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (other - e for e in self)
+                graphmap(lambda e: other - e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1558,7 +1659,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (other / e for e in self)
+                graphmap(lambda e: other / e, self)
                 
             using truediv.
         
@@ -1575,7 +1676,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (other ^ e for e in self)
+                graphmap(lambda e: other ^ e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1589,7 +1690,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (item in e for e in self)
+                graphmap(lambda e: item in e, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1603,7 +1704,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e == other for e in self)
+                graphmap(lambda e: e == other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1617,7 +1718,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e != other for e in self)
+                graphmap(lambda e: e != other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1631,7 +1732,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e <= other for e in self)
+                graphmap(lambda e: e <= other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1645,7 +1746,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e < other for e in self)
+                graphmap(lambda e: e < other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1659,7 +1760,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e > other for e in self)
+                graphmap(lambda e: e > other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1673,7 +1774,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e >= other for e in self)
+                graphmap(lambda e: e >= other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1687,7 +1788,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (cmp(e, other) for e in self)
+                graphmap(lambda e: cmp(e, other), self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1701,7 +1802,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e & other for e in self)
+                graphmap(lambda e: e & other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1715,7 +1816,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e ^ other for e in self)
+                graphmap(lambda e: e ^ other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1729,7 +1830,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e | other for e in self)
+                graphmap(lambda e: e | other, self)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -1743,7 +1844,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e &= other for e in self)
+                graphmap(lambda e: e &= other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1761,7 +1862,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e =^ other for e in self)
+                graphmap(lambda e: e =^ other, self)
             
         :rtype:
             FunctionType -> GeneratorType
@@ -1779,7 +1880,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e |= other for e in self)
+                graphmap(lambda e: e |= other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1797,7 +1898,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e += other for e in self)
+                graphmap(lambda e: e += other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1815,7 +1916,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e -= other for e in self)
+                graphmap(lambda e: e -= other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1833,7 +1934,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e *= other for e in self)
+                graphmap(lambda e: e *= other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1851,7 +1952,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e /= other for e in self)
+                graphmap(lambda e: e /= other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1869,7 +1970,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e |= other for e in self)
+                graphmap(lambda e: e |= other, self)
                 
             using truediv.
                 
@@ -1889,7 +1990,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e //= other for e in self)
+                graphmap(lambda e: e //= other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1907,7 +2008,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e %= other for e in self)
+                graphmap(lambda e: e %= other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1925,7 +2026,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e **= other for e in self)
+                graphmap(lambda e: e **= other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1943,7 +2044,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e <<= other for e in self)
+                graphmap(lambda e:  <<= other, self)
                 
         :rtype:
             FunctionType -> GeneratorType
@@ -1961,7 +2062,7 @@ class RecursiveElementwiseProxy(OperationProxy, PairwiseProxyMixin,
         :returns:
             A function which returns::
             
-                (e >>= other for e in self)
+                graphmap(lambda e: e >>= other, self)
                         
         :rtype:
             FunctionType -> GeneratorType
@@ -1981,11 +2082,11 @@ class PairwiseProxy(OperationProxy, ElementwiseProxyMixin,
     
     .. testsetup::
     
-       nums = PairProxy([1, 2, 3, 4])
+       nums = PairwiseProxy([1, 2, 3, 4])
        
     First, create an PairProxy from any iterable, like so::
     
-        nums = PairProxy([1, 2, 3, 4])
+        nums = PairwiseProxy([1, 2, 3, 4])
         
     You can perform a large vareity of operations on the proxy, and it will
     create a chain of operations to be applied to the contents of the iterable
@@ -1997,25 +2098,18 @@ class PairwiseProxy(OperationProxy, ElementwiseProxyMixin,
     
     >>> nums + [1, 2, 3, 4]
     2, 4, 6, 8
-    
     >>> nums * [2, 2, 3, 3]
     2, 4, 9, 12
-    
     >>> nums == [2, 2, 3, 5]
     False, True, True, False
-    
     >>> (nums.apply(float) / itertools.count(2) + itertools.count(1)).apply(round, args=itertools.repeat([2]))
     1.5, 2.67, 3.75, 4.8
-    
     >>> abs(nums - [3, 2, 1, 1])
     2, 0, 2, 3
-    
     >>> (nums * [2, 2, 1, 5] + [3, 5, 9, 0]) / [4, 1, 2, 3]
     1, 9, 6, 6
-    
     >>> ((nums * itertools.repeat(2) + itertools.repeat(3)) / itertools.repeat(4)).replicate([2, 2, 3, 3])
     1, 0, 0, 0
-    
     >>> ((nums * [2, 3, 4, 5]) > [5, 6, 7, 8]) != [True, True, False, True]
     True, True, True, False
     """
@@ -2042,7 +2136,7 @@ class PairwiseProxy(OperationProxy, ElementwiseProxyMixin,
         :returns:
             A function which returns::
             
-            imap(func, self, args, kwargs)
+                imap(func, self, args, kwargs)
         
         :rtype:
             FunctionType -> GeneratorType
@@ -2073,7 +2167,7 @@ class PairwiseProxy(OperationProxy, ElementwiseProxyMixin,
         :returns:
             A function which returns::
             
-            imap(self, self, args, kwargs)
+                imap(self, self, args, kwargs)
         
         :rtype:
             FunctionType -> GeneratorType

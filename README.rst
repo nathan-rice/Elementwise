@@ -61,4 +61,4 @@ Note::
     There are some exceptions to the broadcasting behavior that can not be
     circumvented.  This includes most methods uesd by builtin types that were
     formerly functions, such as __str__ and __nonzero__. When you need to
-    broadcast these operations, use :meth:`ElementwiseProxy.apply`. 
+    broadcast these operations, use ElementwiseProxy.apply. 

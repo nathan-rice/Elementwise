@@ -1,3 +1,0 @@
-.. automodule:: elementwise
-	:members:
-	:members-order: 'groupwise'
